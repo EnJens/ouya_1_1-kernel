@@ -754,7 +754,7 @@ static int tegra30_soc_set_bias_level_post(struct snd_soc_card *card,
 }
 #endif
 
-static struct snd_soc_dai_link tegra_wm8903_dai[] = {
+static struct snd_soc_dai_link tegra_wm8903_dai_remove[] = {
 	{
 		.name = "WM8903",
 		.stream_name = "WM8903 PCM",
@@ -765,6 +765,21 @@ static struct snd_soc_dai_link tegra_wm8903_dai[] = {
 		.init = tegra_wm8903_init,
 		.ops = &tegra_wm8903_ops,
 	},
+
+};
+static struct snd_soc_dai_link tegra_wm8903_dai[] = {
+#if 0
+	{
+		.name = "WM8903",
+		.stream_name = "WM8903 PCM",
+		.codec_name = "wm8903.0-001a",
+		.platform_name = "tegra-pcm-audio",
+		.cpu_dai_name = "tegra20-i2s.0",
+		.codec_dai_name = "wm8903-hifi",
+		.init = tegra_wm8903_init,
+		.ops = &tegra_wm8903_ops,
+	},
+#endif
 	{
 		.name = "SPDIF",
 		.stream_name = "SPDIF PCM",
@@ -820,9 +835,20 @@ static struct snd_soc_card snd_soc_tegra_wm8903 = {
 	//.set_bias_level_post = tegra30_soc_set_bias_level_post,
 };
 
+static struct snd_soc_card snd_soc_tegra_wm8903_remove = {
+	.name = "tegra-wm8903",
+	.dai_link = tegra_wm8903_dai_remove,
+	.num_links = ARRAY_SIZE(tegra_wm8903_dai),
+	.suspend_post = tegra_wm8903_suspend_post,
+	.resume_pre = tegra_wm8903_resume_pre,
+	//.set_bias_level = tegra30_soc_set_bias_level,
+	//.set_bias_level_post = tegra30_soc_set_bias_level_post,
+};
+
 static __devinit int tegra_wm8903_driver_probe(struct platform_device *pdev)
 {
 	struct snd_soc_card *card = &snd_soc_tegra_wm8903;
+	struct snd_soc_card *card_remove = &snd_soc_tegra_wm8903_remove;	
 	struct tegra_wm8903 *machine;
 	struct tegra_asoc_platform_data *pdata;
 	int ret;
@@ -831,6 +857,10 @@ static __devinit int tegra_wm8903_driver_probe(struct platform_device *pdev)
 	if (!pdata) {
 		dev_err(&pdev->dev, "No platform data supplied\n");
 		return -EINVAL;
+	}
+
+	if (0){
+		ret = tegra_asoc_utils_init(&machine->util_data, &pdev->dev, card_remove);
 	}
 
 	machine = kzalloc(sizeof(struct tegra_wm8903), GFP_KERNEL);
@@ -863,12 +893,21 @@ static __devinit int tegra_wm8903_driver_probe(struct platform_device *pdev)
 	}
 
 	if (machine_is_cardhu()) {
+#if 0
 		tegra_wm8903_dai[0].codec_name = "wm8903.4-001a",
+
 		tegra_wm8903_dai[0].cpu_dai_name = "tegra30-i2s.1";
 
 		tegra_wm8903_dai[1].cpu_dai_name = "tegra30-spdif";
 
 		tegra_wm8903_dai[2].cpu_dai_name = "tegra30-i2s.3";
+#else
+		tegra_wm8903_dai[0].cpu_dai_name = "tegra30-spdif";
+
+		tegra_wm8903_dai[1].cpu_dai_name = "tegra30-i2s.3";
+
+#endif
+		dev_err(&pdev->dev,"We are cardhu and wm8903\n");
 	}
 
 #ifdef CONFIG_SWITCH
