@@ -689,7 +689,8 @@ static int tegra_aic326x_voice_call_hw_params(
 	i2s_daifmt |= pdata->i2s_param[HIFI_CODEC].is_i2s_master ?
 			SND_SOC_DAIFMT_CBS_CFS : SND_SOC_DAIFMT_CBM_CFM;
 
-	if (machine_is_tegra_enterprise()) {
+	if (machine_is_tegra_enterprise() ||
+	    machine_is_tai()) {
 		switch (pdata->i2s_param[HIFI_CODEC].i2s_mode) {
 			case TEGRA_DAIFMT_I2S :
 				i2s_daifmt |= SND_SOC_DAIFMT_I2S;
@@ -1266,11 +1267,11 @@ static __devinit int tegra_aic326x_driver_probe(struct platform_device *pdev)
 			pdata->i2s_param[i].rate;
 		machine->codec_info[i].channels =
 			pdata->i2s_param[i].channels;
-		if ((pdata->i2s_param[i].i2s_mode == TEGRA_DAIFMT_DSP_A) ||
-			(pdata->i2s_param[i].i2s_mode == TEGRA_DAIFMT_DSP_B))
-			machine->codec_info[i].is_format_dsp = 1;
-		else
-			machine->codec_info[i].is_format_dsp = 0;
+		machine->codec_info[i].i2s_mode =
+			pdata->i2s_param[i].i2s_mode;
+		machine->codec_info[i].bit_clk =
+			pdata->i2s_param[i].bit_clk;
+
 	}
 
 	tegra_aic326x_dai[DAI_LINK_HIFI].cpu_dai_name =
@@ -1280,7 +1281,8 @@ static __devinit int tegra_aic326x_driver_probe(struct platform_device *pdev)
 	tegra_i2s_dai_name[machine->codec_info[BT_SCO].i2s_id];
 #endif
 
-	if (machine_is_tegra_enterprise()) {
+	if (machine_is_tegra_enterprise() ||
+	    machine_is_tai()) {
 		tegra_aic326x_dai[DAI_LINK_HIFI].codec_name = "tlv320aic3262-codec";
 		tegra_aic326x_dai[DAI_LINK_VOICE_CALL].codec_name = "tlv320aic3262-codec";
 		tegra_aic326x_dai[DAI_LINK_VOICE_CALL].codec_dai_name = "aic326x-asi1";

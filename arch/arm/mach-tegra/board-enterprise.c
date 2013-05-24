@@ -70,35 +70,61 @@
 #include "fuse.h"
 #include "pm.h"
 
+#ifdef CONFIG_TEGRA_THERMAL_THROTTLE
+static struct throttle_table throttle_freqs_tj[] = {
+	      /*    CPU,    CBUS,    SCLK,     EMC */
+	      { 1000000,  NO_CAP,  NO_CAP,  NO_CAP },
+	      {  760000,  NO_CAP,  NO_CAP,  NO_CAP },
+	      {  760000,  NO_CAP,  NO_CAP,  NO_CAP },
+	      {  620000,  NO_CAP,  NO_CAP,  NO_CAP },
+	      {  620000,  NO_CAP,  NO_CAP,  NO_CAP },
+	      {  620000,  437000,  NO_CAP,  NO_CAP },
+	      {  620000,  352000,  NO_CAP,  NO_CAP },
+	      {  475000,  352000,  NO_CAP,  NO_CAP },
+	      {  475000,  352000,  NO_CAP,  NO_CAP },
+	      {  475000,  352000,  250000,  375000 },
+	      {  475000,  352000,  250000,  375000 },
+	      {  475000,  247000,  204000,  375000 },
+	      {  475000,  247000,  204000,  204000 },
+	      {  475000,  247000,  204000,  204000 },
+	{ CPU_THROT_LOW,  247000,  204000,  102000 },
+};
+#endif
+
+#ifdef CONFIG_TEGRA_SKIN_THROTTLE
+static struct throttle_table throttle_freqs_tskin[] = {
+	      /*    CPU,    CBUS,    SCLK,     EMC */
+	      { 1000000,  NO_CAP,  NO_CAP,  NO_CAP },
+	      {  760000,  NO_CAP,  NO_CAP,  NO_CAP },
+	      {  760000,  NO_CAP,  NO_CAP,  NO_CAP },
+	      {  620000,  NO_CAP,  NO_CAP,  NO_CAP },
+	      {  620000,  NO_CAP,  NO_CAP,  NO_CAP },
+	      {  620000,  437000,  NO_CAP,  NO_CAP },
+	      {  620000,  352000,  NO_CAP,  NO_CAP },
+	      {  475000,  352000,  NO_CAP,  NO_CAP },
+	      {  475000,  352000,  NO_CAP,  NO_CAP },
+	      {  475000,  352000,  250000,  375000 },
+	      {  475000,  352000,  250000,  375000 },
+	      {  475000,  247000,  204000,  375000 },
+	      {  475000,  247000,  204000,  204000 },
+	      {  475000,  247000,  204000,  204000 },
+	{ CPU_THROT_LOW,  247000,  204000,  102000 },
+};
+#endif
+
 static struct balanced_throttle throttle_list[] = {
+#ifdef CONFIG_TEGRA_THERMAL_THROTTLE
 	{
 		.id = BALANCED_THROTTLE_ID_TJ,
-		.throt_tab_size = 10,
-		.throt_tab = {
-			{      0, 1000 },
-			{ 640000, 1000 },
-			{ 640000, 1000 },
-			{ 640000, 1000 },
-			{ 640000, 1000 },
-			{ 640000, 1000 },
-			{ 760000, 1000 },
-			{ 760000, 1050 },
-			{1000000, 1050 },
-			{1000000, 1100 },
-		},
+		.throt_tab_size = ARRAY_SIZE(throttle_freqs_tj),
+		.throt_tab = throttle_freqs_tj,
 	},
+#endif
 #ifdef CONFIG_TEGRA_SKIN_THROTTLE
 	{
 		.id = BALANCED_THROTTLE_ID_SKIN,
-		.throt_tab_size = 6,
-		.throt_tab = {
-			{ 640000, 1200 },
-			{ 640000, 1200 },
-			{ 760000, 1200 },
-			{ 760000, 1200 },
-			{1000000, 1200 },
-			{1000000, 1200 },
-		},
+		.throt_tab_size = ARRAY_SIZE(throttle_freqs_tskin),
+		.throt_tab = throttle_freqs_tskin,
 	},
 #endif
 };
@@ -241,14 +267,15 @@ static __initdata struct tegra_clk_init_table enterprise_clk_init_table[] = {
 	{ "i2s1",	"pll_a_out0",	0,		false},
 	{ "i2s3",	"pll_a_out0",	0,		false},
 	{ "spdif_out",	"pll_a_out0",	0,		false},
-	{ "d_audio",	"clk_m",	12000000,	false},
-	{ "dam0",	"clk_m",	12000000,	false},
-	{ "dam1",	"clk_m",	12000000,	false},
-	{ "dam2",	"clk_m",	12000000,	false},
+	{ "d_audio",	"clk_m",	13000000,	false},
+	{ "dam0",	"clk_m",	13000000,	false},
+	{ "dam1",	"clk_m",	13000000,	false},
+	{ "dam2",	"clk_m",	13000000,	false},
 	{ "audio0",	"i2s0_sync",	0,		false},
 	{ "audio1",	"i2s1_sync",	0,		false},
 	{ "audio2",	"i2s2_sync",	0,		false},
 	{ "audio3",	"i2s3_sync",	0,		false},
+	{ "audio4",	"i2s4_sync",	0,		false},
 	{ "vi",		"pll_p",	0,		false},
 	{ "vi_sensor",	"pll_p",	0,		false},
 	{ "i2c5",	"pll_p",	3200000,	false},
@@ -575,6 +602,17 @@ static void __init enterprise_uart_init(void)
 	platform_add_devices(enterprise_uart_devices,
 				ARRAY_SIZE(enterprise_uart_devices));
 }
+/* add vibrator for enterprise */
+static struct platform_device vibrator_device = {
+	.name = "tegra-vibrator",
+	.id = -1,
+};
+
+static noinline void __init enterprise_vibrator_init(void)
+{
+	platform_device_register(&vibrator_device);
+}
+
 
 static struct resource tegra_rtc_resources[] = {
 	[0] = {
@@ -614,6 +652,7 @@ static struct tegra_asoc_platform_data enterprise_audio_pdata = {
 		.is_i2s_master	= 0,
 		.i2s_mode	= TEGRA_DAIFMT_I2S,
 		.sample_size	= 16,
+		.channels	    = 2,
 	},
 	.i2s_param[BASEBAND]	= {
 		.is_i2s_master	= 1,
@@ -621,6 +660,7 @@ static struct tegra_asoc_platform_data enterprise_audio_pdata = {
 		.sample_size	= 16,
 		.rate		= 8000,
 		.channels	= 1,
+		.bit_clk    = 2048000,
 	},
 	.i2s_param[BT_SCO]	= {
 		.audio_port_id	= 3,
@@ -1165,6 +1205,7 @@ static void __init tegra_enterprise_init(void)
 	enterprise_bpc_mgmt_init();
 	tegra_release_bootloader_fb();
 	tegra_serial_debug_init(TEGRA_UARTD_BASE, INT_WDT_CPU, NULL, -1, -1);
+	enterprise_vibrator_init();
 }
 
 static void __init tegra_enterprise_reserve(void)
@@ -1182,6 +1223,11 @@ static const char *enterprise_dt_board_compat[] = {
 	NULL
 };
 
+static const char *tai_dt_board_compat[] = {
+	"nvidia,tai",
+	NULL
+};
+
 MACHINE_START(TEGRA_ENTERPRISE, "tegra_enterprise")
 	.boot_params    = 0x80000100,
 	.map_io         = tegra_map_common_io,
@@ -1191,4 +1237,15 @@ MACHINE_START(TEGRA_ENTERPRISE, "tegra_enterprise")
 	.timer          = &tegra_timer,
 	.init_machine   = tegra_enterprise_init,
 	.dt_compat	= enterprise_dt_board_compat,
+MACHINE_END
+
+MACHINE_START(TAI, "tai")
+	.boot_params    = 0x80000100,
+	.map_io         = tegra_map_common_io,
+	.reserve        = tegra_enterprise_reserve,
+	.init_early	= tegra_init_early,
+	.init_irq       = tegra_init_irq,
+	.timer          = &tegra_timer,
+	.init_machine   = tegra_enterprise_init,
+	.dt_compat	= tai_dt_board_compat,
 MACHINE_END

@@ -17,6 +17,7 @@
  * with this program; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
+#define PRIMARY_DISP_HDMI
 
 #include <linux/delay.h>
 #include <linux/ion.h>
@@ -439,6 +440,35 @@ static int cardhu_hdmi_disable(void)
 	return 0;
 }
 
+#ifdef PRIMARY_DISP_HDMI
+static struct resource cardhu_disp1_hdmi_resources[] = {
+	{
+		.name	= "irq",
+		.start	= INT_DISPLAY_GENERAL,
+		.end	= INT_DISPLAY_GENERAL,
+		.flags	= IORESOURCE_IRQ,
+	},
+	{
+		.name	= "regs",
+		.start	= TEGRA_DISPLAY_BASE,
+		.end	= TEGRA_DISPLAY_BASE + TEGRA_DISPLAY_SIZE-1,
+		.flags	= IORESOURCE_MEM,
+	},
+	{
+		.name	= "fbmem",
+		.start	= 0,	/* Filled in by cardhu_panel_init() */
+		.end	= 0,	/* Filled in by cardhu_panel_init() */
+		.flags	= IORESOURCE_MEM,
+	},
+	{
+		.name	= "hdmi_regs",
+		.start	= TEGRA_HDMI_BASE,
+		.end	= TEGRA_HDMI_BASE + TEGRA_HDMI_SIZE - 1,
+		.flags	= IORESOURCE_MEM,
+	},
+};
+#endif
+
 static struct resource cardhu_disp1_resources[] = {
 	{
 		.name	= "irq",
@@ -475,6 +505,7 @@ static struct resource cardhu_disp1_resources[] = {
 #endif
 };
 
+#ifndef PRIMARY_DISP_HDMI
 static struct resource cardhu_disp2_resources[] = {
 	{
 		.name	= "irq",
@@ -499,6 +530,25 @@ static struct resource cardhu_disp2_resources[] = {
 		.start	= TEGRA_HDMI_BASE,
 		.end	= TEGRA_HDMI_BASE + TEGRA_HDMI_SIZE - 1,
 		.flags	= IORESOURCE_MEM,
+	},
+};
+#endif
+#endif
+
+#ifdef PRIMARY_DISP_HDMI
+static struct tegra_dc_mode hdmi_panel_modes[] = {
+	{
+        .pclk = 148500000,
+        .h_ref_to_sync = 1,
+        .v_ref_to_sync = 1,
+        .h_sync_width = 44,
+        .v_sync_width = 5,
+        .h_back_porch = 148,
+        .v_back_porch = 36,
+        .h_active = 1920,
+        .v_active = 1080,
+        .h_front_porch = 88,
+        .v_front_porch = 4,
 	},
 };
 #endif
@@ -718,12 +768,14 @@ static struct tegra_dc_out cardhu_disp2_out = {
 	.hotplug_init	= cardhu_hdmi_vddio_enable,
 };
 
+#ifndef PRIMARY_DISP_HDMI
 static struct tegra_dc_platform_data cardhu_disp2_pdata = {
 	.flags		= TEGRA_DC_FLAG_ENABLED,
 	.default_out	= &cardhu_disp2_out,
 	.fb		= &cardhu_hdmi_fb_data,
 	.emc_clk_rate	= 300000000,
 };
+#endif
 #endif
 
 static int cardhu_dsi_panel_enable(void)
@@ -1075,6 +1127,7 @@ static struct tegra_dc_out cardhu_disp1_out = {
 };
 
 #ifdef CONFIG_TEGRA_DC
+
 static struct tegra_dc_platform_data cardhu_disp1_pdata = {
 	.flags		= TEGRA_DC_FLAG_ENABLED,
 	.default_out	= &cardhu_disp1_out,
@@ -1096,6 +1149,7 @@ static int cardhu_disp1_check_fb(struct device *dev, struct fb_info *info)
 	return info->device == &cardhu_disp1_device.dev;
 }
 
+#ifndef PRIMARY_DISP_HDMI
 static struct nvhost_device cardhu_disp2_device = {
 	.name		= "tegradc",
 	.id		= 1,
@@ -1105,6 +1159,7 @@ static struct nvhost_device cardhu_disp2_device = {
 		.platform_data = &cardhu_disp2_pdata,
 	},
 };
+#endif
 #else
 static int cardhu_disp1_check_fb(struct device *dev, struct fb_info *info)
 {
@@ -1425,6 +1480,20 @@ skip_lvds:
 				ARRAY_SIZE(cardhu_gfx_devices));
 
 #if defined(CONFIG_TEGRA_GRHOST) && defined(CONFIG_TEGRA_DC)
+#ifdef PRIMARY_DISP_HDMI
+	cardhu_disp1_pdata.default_out = &cardhu_disp2_out;
+	cardhu_disp1_pdata.fb = &cardhu_fb_data;
+	cardhu_disp1_device.resource = cardhu_disp1_hdmi_resources;
+	cardhu_disp1_device.num_resources = ARRAY_SIZE(cardhu_disp1_hdmi_resources);
+
+	cardhu_fb_data.xres = 1920;
+	cardhu_fb_data.yres = 1080;
+
+	cardhu_disp2_out.depth = 18;
+	cardhu_disp2_out.dither = TEGRA_DC_ORDERED_DITHER;
+	cardhu_disp2_out.modes = hdmi_panel_modes;
+	cardhu_disp2_out.n_modes = ARRAY_SIZE(hdmi_panel_modes);
+#endif
 	res = nvhost_get_resource_byname(&cardhu_disp1_device,
 					 IORESOURCE_MEM, "fbmem");
 	res->start = tegra_fb_start;
@@ -1439,24 +1508,18 @@ skip_lvds:
 	if (!err)
 		err = nvhost_device_register(&cardhu_disp1_device);
 
+#ifndef PRIMARY_DISP_HDMI
 	res = nvhost_get_resource_byname(&cardhu_disp2_device,
 					 IORESOURCE_MEM, "fbmem");
 	res->start = tegra_fb2_start;
 	res->end = tegra_fb2_start + tegra_fb2_size - 1;
 
-	/*
-	 * If the bootloader fb2 is valid, copy it to the fb2, or else
-	 * clear fb2 to avoid garbage on dispaly2.
-	 */
-	if (tegra_bootloader_fb2_size)
-		tegra_move_framebuffer(tegra_fb2_start,
-			tegra_bootloader_fb2_start,
-			min(tegra_fb2_size, tegra_bootloader_fb2_size));
-	else
-		tegra_clear_framebuffer(tegra_fb2_start, tegra_fb2_size);
-
+	/* Copy the bootloader fb to the fb2. */
+	tegra_move_framebuffer(tegra_fb2_start, tegra_bootloader_fb_start,
+				min(tegra_fb2_size, tegra_bootloader_fb_size));
 	if (!err)
 		err = nvhost_device_register(&cardhu_disp2_device);
+#endif
 #endif
 
 #if defined(CONFIG_TEGRA_GRHOST) && defined(CONFIG_TEGRA_NVAVP)

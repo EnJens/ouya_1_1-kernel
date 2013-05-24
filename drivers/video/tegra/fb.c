@@ -38,8 +38,6 @@
 #include <mach/fb.h>
 #include <linux/nvhost.h>
 #include <linux/nvmap.h>
-#include <linux/console.h>
-
 
 #include "host/dev.h"
 #include "nvmap/nvmap.h"
@@ -96,7 +94,6 @@ static int tegra_fb_set_par(struct fb_info *info)
 {
 	struct tegra_fb_info *tegra_fb = info->par;
 	struct fb_var_screeninfo *var = &info->var;
-	struct tegra_dc *dc = tegra_fb->win->dc;
 
 	if (var->bits_per_pixel) {
 		/* we only support RGB ordering for now */
@@ -126,9 +123,12 @@ static int tegra_fb_set_par(struct fb_info *info)
 			return -EINVAL;
 		}
 		/* if line_length unset, then pad the stride */
-		info->fix.line_length = var->xres * var->bits_per_pixel / 8;
-		info->fix.line_length = round_up(info->fix.line_length,
-					TEGRA_LINEAR_PITCH_ALIGNMENT);
+		if (!info->fix.line_length) {
+			info->fix.line_length = var->xres * var->bits_per_pixel
+				/ 8;
+			info->fix.line_length = round_up(info->fix.line_length,
+						TEGRA_LINEAR_PITCH_ALIGNMENT);
+		}
 		tegra_fb->win->stride = info->fix.line_length;
 		tegra_fb->win->stride_uv = 0;
 		tegra_fb->win->phys_addr_u = 0;
@@ -137,29 +137,16 @@ static int tegra_fb_set_par(struct fb_info *info)
 
 	if (var->pixclock) {
 		bool stereo;
-		unsigned old_len = 0;
 		struct fb_videomode m;
-		struct fb_videomode *old_mode = NULL;
 
 		fb_var_to_videomode(&m, var);
-
-		/* Load framebuffer info with new mode details*/
-		old_mode = info->mode;
-		old_len  = info->fix.line_length;
 
 		info->mode = (struct fb_videomode *)
 			fb_find_nearest_mode(&m, &info->modelist);
 		if (!info->mode) {
 			dev_warn(&tegra_fb->ndev->dev, "can't match video mode\n");
-			info->mode = old_mode;
 			return -EINVAL;
 		}
-
-		/* Update fix line_length and window stride as per new mode */
-		info->fix.line_length = var->xres * var->bits_per_pixel / 8;
-		info->fix.line_length = round_up(info->fix.line_length,
-			TEGRA_LINEAR_PITCH_ALIGNMENT);
-		tegra_fb->win->stride = info->fix.line_length;
 
 		/*
 		 * only enable stereo if the mode supports it and
@@ -172,21 +159,7 @@ static int tegra_fb_set_par(struct fb_info *info)
 					FB_VMODE_STEREO_LEFT_RIGHT);
 #endif
 
-		/* Configure DC with new mode */
-		if (tegra_dc_set_fb_mode(dc, info->mode, stereo)) {
-			/* Error while configuring DC, fallback to old mode */
-			dev_warn(&tegra_fb->ndev->dev, "can't configure dc with mode %ux%u\n",
-				info->mode->xres, info->mode->yres);
-			info->mode = old_mode;
-			info->fix.line_length = old_len;
-			tegra_fb->win->stride = old_len;
-			return -EINVAL;
-		}
-
-		/* Reflect mode chnage on DC HW */
-		if (dc->enabled)
-			tegra_dc_disable(dc);
-		tegra_dc_enable(dc);
+		tegra_dc_set_fb_mode(tegra_fb->win->dc, info->mode, stereo);
 
 		tegra_fb->win->w.full = dfixed_const(info->mode->xres);
 		tegra_fb->win->h.full = dfixed_const(info->mode->yres);
@@ -464,45 +437,13 @@ static struct fb_ops tegra_fb_ops = {
 	.fb_ioctl = tegra_fb_ioctl,
 };
 
-const struct fb_videomode *tegra_fb_find_best_mode(
-	struct fb_var_screeninfo *var,
-	struct list_head *head)
-{
-	struct list_head *pos;
-	struct fb_modelist *modelist;
-	struct fb_videomode *mode, *best = NULL;
-	int diff = 0;
-
-	list_for_each(pos, head) {
-		int d;
-
-		modelist = list_entry(pos, struct fb_modelist, list);
-		mode = &modelist->mode;
-
-		if (mode->xres >= var->xres && mode->yres >= var->yres) {
-			d = (mode->xres - var->xres) +
-				(mode->yres - var->yres);
-			if (diff < d) {
-				diff = d;
-				best = mode;
-			} else if (diff == d && best &&
-				   mode->refresh > best->refresh)
-				best = mode;
-		}
-	}
-	return best;
-}
-
 void tegra_fb_update_monspecs(struct tegra_fb_info *fb_info,
 			      struct fb_monspecs *specs,
 			      bool (*mode_filter)(const struct tegra_dc *dc,
 						  struct fb_videomode *mode))
 {
-	int i;
-	bool first = false;
 	struct fb_event event;
-	struct fb_info *info = fb_info->info;
-	struct fb_var_screeninfo var = {0,};
+	int i;
 
 	mutex_lock(&fb_info->info->lock);
 	fb_destroy_modedb(fb_info->info->monspecs.modedb);
@@ -529,58 +470,19 @@ void tegra_fb_update_monspecs(struct tegra_fb_info *fb_info,
 	       sizeof(fb_info->info->monspecs));
 	fb_info->info->mode = specs->modedb;
 
-	/* Prepare a mode db */
 	for (i = 0; i < specs->modedb_len; i++) {
-		if (info->fbops->fb_check_var) {
-			struct fb_videomode m;
-
-			/* Call mode filter to check mode */
-			fb_videomode_to_var(&var, &specs->modedb[i]);
-			if (!(info->fbops->fb_check_var(&var, info))) {
-				fb_var_to_videomode(&m, &var);
-				fb_add_videomode(&m,
+		if (mode_filter) {
+			if (mode_filter(fb_info->win->dc, &specs->modedb[i]))
+				fb_add_videomode(&specs->modedb[i],
 						 &fb_info->info->modelist);
-				/* EDID stds recommend first detailed mode
-				to be applied as default,but if first mode
-				doesn't pass mode filter, we have to select
-				and apply other mode. So flag on if first
-				mode passes mode filter */
-				if (!i)
-					first = true;
-			}
 		} else {
 			fb_add_videomode(&specs->modedb[i],
 					 &fb_info->info->modelist);
 		}
 	}
 
-	/* We can't apply first detailed mode, so get the best mode
-	based on resolution and apply on fb */
-	if (!first) {
-		var.xres = 0;
-		var.yres = 0;
-		info->mode = (struct fb_videomode *)
-			tegra_fb_find_best_mode(&var, &info->modelist);
-	}
-
-	/* Prepare fb info with new mode details */
-	fb_videomode_to_var(&info->var, info->mode);
 	event.info = fb_info->info;
-
-#ifdef CONFIG_FRAMEBUFFER_CONSOLE
-	/* Send a noti to change fb_display[].mode for all vc's */
-	console_lock();
-	fb_notifier_call_chain(FB_EVENT_MODE_CHANGE_ALL, &event);
-	console_unlock();
-
-	/* Notify framebuffer console about mode change */
-	console_lock();
 	fb_notifier_call_chain(FB_EVENT_NEW_MODELIST, &event);
-	console_unlock();
-#else
-	fb_notifier_call_chain(FB_EVENT_NEW_MODELIST, &event);
-#endif
-
 	mutex_unlock(&fb_info->info->lock);
 }
 
@@ -630,8 +532,12 @@ struct tegra_fb_info *tegra_fb_register(struct nvhost_device *ndev,
 		tegra_fb->valid = true;
 	}
 
-	stride = fb_data->xres * fb_data->bits_per_pixel / 8;
-	stride = round_up(stride, TEGRA_LINEAR_PITCH_ALIGNMENT);
+	info->fix.line_length = fb_data->xres * fb_data->bits_per_pixel / 8;
+
+	stride = tegra_dc_get_stride(dc, 0);
+	if (!stride) /* default to pad the stride */
+		stride = round_up(info->fix.line_length,
+			TEGRA_LINEAR_PITCH_ALIGNMENT);
 
 	info->fbops = &tegra_fb_ops;
 	info->pseudo_palette = pseudo_palette;

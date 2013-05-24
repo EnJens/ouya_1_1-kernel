@@ -145,6 +145,10 @@ struct tegra_dtv_context {
 	struct clk                *clk;
 	int                        clk_enabled;
 
+	bool                      turbo;
+	struct clk                *sclk;
+	struct clk                *emc_clk;
+
 	phys_addr_t                phys;
 	void * __iomem base;
 	unsigned long              dma_req_sel;
@@ -250,7 +254,7 @@ static void tegra_dtv_rx_dma_complete(struct tegra_dma_req *req)
 	complete(&s->comp[req_num]);
 
 	if (!are_xfers_pending(s))
-		pr_debug("%s: overflow.\n", __func__);
+		pr_warn("%s: overflow.\n", __func__);
 
 	spin_unlock_irqrestore(&s->dma_req_lock, flags);
 }
@@ -619,7 +623,26 @@ static int tegra_dtv_open(struct inode *inode, struct file *file)
 	struct miscdevice *miscdev = file->private_data;
 	struct tegra_dtv_context *dtv_ctx =
 		container_of(miscdev, struct tegra_dtv_context, miscdev);
+	struct platform_device *pdev;
 	file->private_data = dtv_ctx;
+
+	/* hold system bus clock and EMC clock to ensure DTV driver has
+	 * enought bandwidth.
+	 *
+	 * The frequencies for these clocks should be set up on platform
+	 * bias in board file.
+	 */
+	pdev = dtv_ctx->pdev;
+	if (dtv_ctx->turbo) {
+		if (clk_enable(dtv_ctx->sclk) < 0) {
+			dev_err(&pdev->dev, "cannot enable SBus clock.\n");
+			return -ENOSYS;
+		}
+		if (clk_enable(dtv_ctx->emc_clk) < 0) {
+			dev_err(&pdev->dev, "cannot enable EMC clock.\n");
+			return -ENOSYS;
+		}
+	}
 
 	dtv_ctx = (struct tegra_dtv_context *) file->private_data;
 
@@ -664,6 +687,12 @@ static int tegra_dtv_release(struct inode *inode, struct file *file)
 		complete(&dtv_ctx->stream.stop_completion);
 		__force_xfer_stop(&dtv_ctx->stream);
 	}
+
+	if (dtv_ctx->turbo) {
+		clk_disable(dtv_ctx->sclk);
+		clk_disable(dtv_ctx->emc_clk);
+	}
+
 	/* wakeup any pending process */
 	wakeup_suspend(&dtv_ctx->stream);
 	mutex_unlock(&dtv_ctx->stream.mtx);
@@ -694,8 +723,8 @@ static int dtv_reg_show(struct seq_file *s, void *unused)
 		   tegra_dtv_readl(dtv_ctx, DTV_MODE));
 	seq_printf(s, "DTV_CONTROL:       0x%08x\n",
 		   tegra_dtv_readl(dtv_ctx, DTV_CTRL));
-	seq_printf(s, "DTV_FIFO:          0x%08x\n",
-		   tegra_dtv_readl(dtv_ctx, DTV_RX_FIFO));
+	seq_printf(s, "DTV_STATUS:       0x%08x\n",
+		   tegra_dtv_readl(dtv_ctx, DTV_STATUS));
 
 	return 0;
 
@@ -896,6 +925,7 @@ static int tegra_dtv_probe(struct platform_device *pdev)
 {
 	int ret;
 	struct tegra_dtv_context *dtv_ctx;
+	struct tegra_dtv_platform_data *pdata;
 	struct clk *clk;
 	struct resource *res;
 
@@ -910,6 +940,8 @@ static int tegra_dtv_probe(struct platform_device *pdev)
 		return ret;
 	}
 	platform_set_drvdata(pdev, dtv_ctx);
+
+	pdata = pdev->dev.platform_data;
 
 	/* for refer back */
 	dtv_ctx->pdev = pdev;
@@ -928,6 +960,27 @@ static int tegra_dtv_probe(struct platform_device *pdev)
 		goto fail_clk_enable;
 	}
 	dtv_ctx->clk_enabled = 1;
+
+	if (pdata && pdata->turbo)
+		dtv_ctx->turbo = true;
+
+	if (dtv_ctx->turbo) {
+		/* get shared system bus clock and emc clock */
+		dtv_ctx->sclk = clk_get(&pdev->dev, "sclk");
+		if (IS_ERR(dtv_ctx->sclk)) {
+			dev_err(&pdev->dev,
+				"cannot get SBus clock for tegra_dtv.\n");
+			ret = -EIO;
+			goto fail_no_clk;
+		}
+		dtv_ctx->emc_clk = clk_get(&pdev->dev, "emc");
+		if (IS_ERR(dtv_ctx->emc_clk)) {
+			dev_err(&pdev->dev,
+				"cannot get EMC clock for tegra_dtv.\n");
+			ret = -EIO;
+			goto fail_no_clk;
+		}
+	}
 
 	/* get resource */
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);

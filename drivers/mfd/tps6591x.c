@@ -38,6 +38,7 @@
 #define DEVCTRL_PWR_OFF_SEQ	(1 << 7)
 #define DEVCTRL_DEV_ON		(1 << 2)
 #define DEVCTRL_DEV_SLP		(1 << 1)
+#define DEVCTRL_PWR_OFF		(1 << 0)
 #define TPS6591X_DEVCTRL2	0x40
 
 /* device sleep on registers */
@@ -295,6 +296,9 @@ static void tps6591x_power_off(void)
 
 	if (tps6591x_set_bits(dev, TPS6591X_DEVCTRL, DEVCTRL_PWR_OFF_SEQ) < 0)
 		return;
+
+	if (tps6591x_set_bits(dev, TPS6591X_DEVCTRL, DEVCTRL_PWR_OFF) < 0)
+	return;
 
 	tps6591x_clr_bits(dev, TPS6591X_DEVCTRL, DEVCTRL_DEV_ON);
 }

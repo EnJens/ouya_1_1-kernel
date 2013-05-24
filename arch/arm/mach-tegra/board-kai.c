@@ -69,35 +69,61 @@
 #include "pm.h"
 #include "wdt-recovery.h"
 
+#ifdef CONFIG_TEGRA_THERMAL_THROTTLE
+static struct throttle_table throttle_freqs_tj[] = {
+	      /*    CPU,    CBUS,    SCLK,     EMC */
+	      { 1000000,  NO_CAP,  NO_CAP,  NO_CAP },
+	      {  760000,  NO_CAP,  NO_CAP,  NO_CAP },
+	      {  760000,  NO_CAP,  NO_CAP,  NO_CAP },
+	      {  620000,  NO_CAP,  NO_CAP,  NO_CAP },
+	      {  620000,  NO_CAP,  NO_CAP,  NO_CAP },
+	      {  620000,  437000,  NO_CAP,  NO_CAP },
+	      {  620000,  352000,  NO_CAP,  NO_CAP },
+	      {  475000,  352000,  NO_CAP,  NO_CAP },
+	      {  475000,  352000,  NO_CAP,  NO_CAP },
+	      {  475000,  352000,  250000,  375000 },
+	      {  475000,  352000,  250000,  375000 },
+	      {  475000,  247000,  204000,  375000 },
+	      {  475000,  247000,  204000,  204000 },
+	      {  475000,  247000,  204000,  204000 },
+	{ CPU_THROT_LOW,  247000,  204000,  102000 },
+};
+#endif
+
+#ifdef CONFIG_TEGRA_SKIN_THROTTLE
+static struct throttle_table throttle_freqs_tskin[] = {
+	      /*    CPU,    CBUS,    SCLK,     EMC */
+	      { 1000000,  NO_CAP,  NO_CAP,  NO_CAP },
+	      {  760000,  NO_CAP,  NO_CAP,  NO_CAP },
+	      {  760000,  NO_CAP,  NO_CAP,  NO_CAP },
+	      {  620000,  NO_CAP,  NO_CAP,  NO_CAP },
+	      {  620000,  NO_CAP,  NO_CAP,  NO_CAP },
+	      {  620000,  437000,  NO_CAP,  NO_CAP },
+	      {  620000,  352000,  NO_CAP,  NO_CAP },
+	      {  475000,  352000,  NO_CAP,  NO_CAP },
+	      {  475000,  352000,  NO_CAP,  NO_CAP },
+	      {  475000,  352000,  250000,  375000 },
+	      {  475000,  352000,  250000,  375000 },
+	      {  475000,  247000,  204000,  375000 },
+	      {  475000,  247000,  204000,  204000 },
+	      {  475000,  247000,  204000,  204000 },
+	{ CPU_THROT_LOW,  247000,  204000,  102000 },
+};
+#endif
+
 static struct balanced_throttle throttle_list[] = {
+#ifdef CONFIG_TEGRA_THERMAL_THROTTLE
 	{
 		.id = BALANCED_THROTTLE_ID_TJ,
-		.throt_tab_size = 10,
-		.throt_tab = {
-			{      0, 1000 },
-			{ 640000, 1000 },
-			{ 640000, 1000 },
-			{ 640000, 1000 },
-			{ 640000, 1000 },
-			{ 640000, 1000 },
-			{ 760000, 1000 },
-			{ 760000, 1050 },
-			{1000000, 1050 },
-			{1000000, 1100 },
-		},
+		.throt_tab_size = ARRAY_SIZE(throttle_freqs_tj),
+		.throt_tab = throttle_freqs_tj,
 	},
+#endif
 #ifdef CONFIG_TEGRA_SKIN_THROTTLE
 	{
 		.id = BALANCED_THROTTLE_ID_SKIN,
-		.throt_tab_size = 6,
-		.throt_tab = {
-			{ 640000, 1200 },
-			{ 640000, 1200 },
-			{ 760000, 1200 },
-			{ 760000, 1200 },
-			{1000000, 1200 },
-			{1000000, 1200 },
-		},
+		.throt_tab_size = ARRAY_SIZE(throttle_freqs_tskin),
+		.throt_tab = throttle_freqs_tskin,
 	},
 #endif
 };

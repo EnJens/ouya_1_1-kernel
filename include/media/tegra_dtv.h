@@ -128,6 +128,7 @@ struct tegra_dtv_platform_data {
 	int clk_edge;
 	bool byte_swz_enabled;
 	bool bit_swz_enabled;
+	bool turbo;
 };
 #endif /* __KERNEL__ */
 

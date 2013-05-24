@@ -1885,12 +1885,12 @@ static int ar0832_power_on(struct ar0832_dev *dev)
 		dev->pdata->power_on(dev->is_stereo);
 	}
 	dev->brd_power_cnt++;
-	mutex_unlock(&dev->ar0832_camera_lock);
 
 	/* Change slave address */
 	if (i2c_client->addr)
 		ret = ar0832_set_alternate_addr(i2c_client);
 
+	mutex_unlock(&dev->ar0832_camera_lock);
 	return 0;
 
 fail_regulator_2v8_reg:
@@ -1900,6 +1900,7 @@ fail_regulator_2v8_reg:
 fail_regulator_1v8_reg:
 	regulator_put(dev->power_rail.sen_1v8_reg);
 	dev->power_rail.sen_1v8_reg = NULL;
+	mutex_unlock(&dev->ar0832_camera_lock);
 	return ret;
 }
 

@@ -131,7 +131,9 @@ extern struct platform_device debug_uarte_device;
 #endif
 
 extern struct nvhost_device tegra_disp1_device;
+#if 0
 extern struct nvhost_device tegra_disp2_device;
+#endif
 extern struct platform_device tegra_nvmap_device;
 #ifndef CONFIG_ARCH_TEGRA_2x_SOC
 extern struct platform_device tegra_cec_device;

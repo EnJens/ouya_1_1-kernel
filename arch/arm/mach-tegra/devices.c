@@ -17,6 +17,7 @@
  * GNU General Public License for more details.
  *
  */
+#define PRIMARY_DISP_HDMI
 
 
 #include <linux/resource.h>
@@ -1698,6 +1699,7 @@ struct nvhost_device tegra_disp1_device = {
 	.num_resources	= ARRAY_SIZE(tegra_disp1_resources),
 };
 
+#ifndef PRIMARY_DISP_HDMI
 static struct resource tegra_disp2_resources[] = {
 	{
 		.name	= "irq",
@@ -1734,6 +1736,7 @@ struct nvhost_device tegra_disp2_device = {
 		.platform_data = 0,
 	},
 };
+#endif
 
 struct platform_device tegra_nvmap_device = {
 	.name	= "tegra-nvmap",
