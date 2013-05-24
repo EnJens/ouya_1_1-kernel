@@ -192,8 +192,10 @@ int tegra_dc_ext_check_windowattr(struct tegra_dc_ext *ext,
 	addr = tegra_dc_parse_feature(dc, win->idx, GET_WIN_SIZE);
 	if (CHECK_SIZE(win->out_w, addr[MIN_WIDTH], addr[MAX_WIDTH]) ||
 		CHECK_SIZE(win->out_h, addr[MIN_HEIGHT], addr[MAX_HEIGHT])) {
+#if 0
 		dev_err(&dc->ndev->dev, "Size of window %d is"
 						" invalid.\n", win->idx);
+#endif
 		goto fail;
 	}
 
@@ -260,9 +262,11 @@ static int tegra_dc_ext_set_windowattr(struct tegra_dc_ext *ext,
 	win->stride_uv = flip_win->attr.stride_uv;
 
 	err = tegra_dc_ext_check_windowattr(ext, win);
+#if 0
 	if (err < 0)
 		dev_err(&ext->dc->ndev->dev,
 				"Window atrributes are invalid.\n");
+#endif
 
 	if ((s32)flip_win->attr.pre_syncpt_id >= 0) {
 		nvhost_syncpt_wait_timeout(
@@ -378,7 +382,12 @@ static void tegra_dc_ext_flip_worker(struct work_struct *work)
 			list_del(&data->timestamp_node);
 		mutex_unlock(&ext_win->queue_lock);
 
-		if (win->flags & TEGRA_WIN_FLAG_ENABLED) {
+		if (skip_flip)
+			old_handle = flip_win->handle[TEGRA_DC_Y];
+		else
+			old_handle = ext_win->cur_handle[TEGRA_DC_Y];
+
+		if (old_handle) {
 			int j;
 			for (j = 0; j < TEGRA_DC_NUM_PLANES; j++) {
 				if (skip_flip)

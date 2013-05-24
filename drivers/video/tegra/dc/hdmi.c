@@ -16,6 +16,7 @@
  * GNU General Public License for more details.
  *
  */
+#define PRIMARY_DISP_HDMI
 
 #include <linux/clk.h>
 #include <linux/delay.h>
@@ -101,7 +102,9 @@ struct tegra_dc_hdmi_data {
 	struct clk			*clk;
 
 	struct clk			*disp1_clk;
+#ifndef PRIMARY_DISP_HDMI
 	struct clk			*disp2_clk;
+#endif
 	struct clk			*hda_clk;
 	struct clk			*hda2codec_clk;
 	struct clk			*hda2hdmi_clk;
@@ -1551,7 +1554,9 @@ static int tegra_dc_hdmi_init(struct tegra_dc *dc)
 	void __iomem *base;
 	struct clk *clk = NULL;
 	struct clk *disp1_clk = NULL;
+#ifndef PRIMARY_DISP_HDMI
 	struct clk *disp2_clk = NULL;
+#endif
 	int err;
 
 	hdmi = kzalloc(sizeof(*hdmi), GFP_KERNEL);
@@ -1593,12 +1598,14 @@ static int tegra_dc_hdmi_init(struct tegra_dc *dc)
 		goto err_put_clock;
 	}
 
+#ifndef PRIMARY_DISP_HDMI
 	disp2_clk = clk_get_sys("tegradc.1", NULL);
 	if (IS_ERR_OR_NULL(disp2_clk)) {
 		dev_err(&dc->ndev->dev, "hdmi: can't disp2 clock\n");
 		err = -ENOENT;
 		goto err_put_clock;
 	}
+#endif
 
 #if !defined(CONFIG_ARCH_TEGRA_2x_SOC)
 	hdmi->hda_clk = clk_get_sys("tegra30-hda", "hda");
@@ -1623,6 +1630,7 @@ static int tegra_dc_hdmi_init(struct tegra_dc *dc)
 	}
 #endif
 
+#if 0
 	/* TODO: support non-hotplug */
 	if (request_irq(gpio_to_irq(dc->out->hotplug_gpio), tegra_dc_hdmi_irq,
 			IRQF_DISABLED | IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING,
@@ -1632,6 +1640,7 @@ static int tegra_dc_hdmi_init(struct tegra_dc *dc)
 		err = -EBUSY;
 		goto err_put_clock;
 	}
+#endif
 
 	hdmi->edid = tegra_edid_create(dc->out->dcc_bus);
 	if (IS_ERR_OR_NULL(hdmi->edid)) {
@@ -1659,7 +1668,9 @@ static int tegra_dc_hdmi_init(struct tegra_dc *dc)
 	hdmi->base_res = base_res;
 	hdmi->clk = clk;
 	hdmi->disp1_clk = disp1_clk;
+#ifndef PRIMARY_DISP_HDMI
 	hdmi->disp2_clk = disp2_clk;
+#endif
 	hdmi->suspended = false;
 	hdmi->eld_retrieved= false;
 	hdmi->clk_enabled = false;
@@ -1692,6 +1703,17 @@ static int tegra_dc_hdmi_init(struct tegra_dc *dc)
 
 	tegra_dc_hdmi_debug_create(hdmi);
 
+#if 1
+	/* TODO: support non-hotplug */
+	if (request_irq(gpio_to_irq(dc->out->hotplug_gpio), tegra_dc_hdmi_irq,
+			IRQF_DISABLED | IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING,
+			dev_name(&dc->ndev->dev), dc)) {
+		dev_err(&dc->ndev->dev, "hdmi: request_irq %d failed\n",
+			gpio_to_irq(dc->out->hotplug_gpio));
+		err = -EBUSY;
+		goto err_put_clock;
+	}
+#endif
 	return 0;
 
 #ifdef CONFIG_TEGRA_NVHDCP
@@ -1709,8 +1731,10 @@ err_put_clock:
 	if (!IS_ERR_OR_NULL(hdmi->hda_clk))
 		clk_put(hdmi->hda_clk);
 #endif
+#ifndef PRIMARY_DISP_HDMI
 	if (!IS_ERR_OR_NULL(disp2_clk))
 		clk_put(disp2_clk);
+#endif
 	if (!IS_ERR_OR_NULL(disp1_clk))
 		clk_put(disp1_clk);
 	if (!IS_ERR_OR_NULL(clk))
@@ -1742,7 +1766,9 @@ static void tegra_dc_hdmi_destroy(struct tegra_dc *dc)
 #endif
 	clk_put(hdmi->clk);
 	clk_put(hdmi->disp1_clk);
+#ifndef PRIMARY_DISP_HDMI
 	clk_put(hdmi->disp2_clk);
+#endif
 	tegra_edid_destroy(hdmi->edid);
 	tegra_nvhdcp_destroy(hdmi->nvhdcp);
 
@@ -2135,15 +2161,17 @@ static void tegra_dc_hdmi_setup_avi_infoframe(struct tegra_dc *dc, bool dvi)
 				avi.vic = 16; /* 60 Hz */
 			else
 				avi.vic = 34; /* 30 Hz */
-		} else if (dc->mode.h_front_porch == 528)
-			avi.vic = 31; /* 50 Hz */
-		else
+		} else if (dc->mode.h_front_porch == 528) {
+			if (dc->mode.pclk > 74250000)
+				avi.vic = 31; /* 50 Hz */
+			else
+				avi.vic = 33; /* 25 Hz */
+		} else
 			avi.vic = 32; /* 24 Hz */
 	} else {
 		avi.m = HDMI_AVI_M_16_9;
 		avi.vic = 0;
 	}
-
 
 	tegra_dc_hdmi_write_infopack(dc, HDMI_NV_PDISP_HDMI_AVI_INFOFRAME_HEADER,
 				     HDMI_INFOFRAME_TYPE_AVI,
@@ -2246,7 +2274,9 @@ static void tegra_dc_hdmi_enable(struct tegra_dc *dc)
 	 * to disp1 or disp2 we need to enable both until we set the DC mux.
 	 */
 	clk_enable(hdmi->disp1_clk);
+#ifndef PRIMARY_DISP_HDMI
 	clk_enable(hdmi->disp2_clk);
+#endif
 
 #if !defined(CONFIG_ARCH_TEGRA_2x_SOC)
 	/* Enabling HDA clocks before asserting HDA PD and ELDV bits */
@@ -2308,7 +2338,9 @@ static void tegra_dc_hdmi_enable(struct tegra_dc *dc)
 				  HDMI_NV_PDISP_INPUT_CONTROL);
 
 	clk_disable(hdmi->disp1_clk);
+#ifndef PRIMARY_DISP_HDMI
 	clk_disable(hdmi->disp2_clk);
+#endif
 
 	dispclk_div_8_2 = clk_get_rate(hdmi->clk) / 1000000 * 4;
 	tegra_hdmi_writel(hdmi,

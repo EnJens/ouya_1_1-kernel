@@ -233,6 +233,10 @@ int tegra_dc_update_windows(struct tegra_dc_win *windows[], int n)
 
 	tegra_dc_hold_dc_out(dc);
 
+	val = tegra_dc_readl(dc, DC_CMD_INT_MASK);
+	val &= ~(FRAME_END_INT | V_BLANK_INT | ALL_UF_INT);
+	tegra_dc_writel(dc, val, DC_CMD_INT_MASK);
+
 	if (no_vsync)
 		tegra_dc_writel(dc, WRITE_MUX_ACTIVE | READ_MUX_ACTIVE,
 			DC_CMD_STATE_ACCESS);
@@ -411,18 +415,6 @@ int tegra_dc_update_windows(struct tegra_dc_win *windows[], int n)
 
 	tegra_dc_writel(dc, update_mask << 8, DC_CMD_STATE_CONTROL);
 
-	tegra_dc_writel(dc, FRAME_END_INT | V_BLANK_INT, DC_CMD_INT_STATUS);
-	if (!no_vsync) {
-		set_bit(V_BLANK_FLIP, &dc->vblank_ref_count);
-		tegra_dc_unmask_interrupt(dc,
-			FRAME_END_INT | V_BLANK_INT | ALL_UF_INT);
-	} else {
-		clear_bit(V_BLANK_FLIP, &dc->vblank_ref_count);
-		tegra_dc_mask_interrupt(dc, V_BLANK_INT | ALL_UF_INT);
-		if (!atomic_read(&frame_end_ref))
-			tegra_dc_mask_interrupt(dc, FRAME_END_INT);
-	}
-
 	if (dc->out->flags & TEGRA_DC_OUT_ONE_SHOT_MODE)
 		schedule_delayed_work(&dc->one_shot_work,
 				msecs_to_jiffies(dc->one_shot_delay_ms));
@@ -435,6 +427,18 @@ int tegra_dc_update_windows(struct tegra_dc_win *windows[], int n)
 
 	tegra_dc_writel(dc, update_mask, DC_CMD_STATE_CONTROL);
 	trace_printk("%s:update_mask=%#lx\n", dc->ndev->name, update_mask);
+
+	tegra_dc_writel(dc, FRAME_END_INT | V_BLANK_INT, DC_CMD_INT_STATUS);
+	if (!no_vsync) {
+		set_bit(V_BLANK_FLIP, &dc->vblank_ref_count);
+		tegra_dc_unmask_interrupt(dc,
+			FRAME_END_INT | V_BLANK_INT | ALL_UF_INT);
+	} else {
+		clear_bit(V_BLANK_FLIP, &dc->vblank_ref_count);
+		tegra_dc_mask_interrupt(dc, V_BLANK_INT | ALL_UF_INT);
+		if (!atomic_read(&frame_end_ref))
+			tegra_dc_mask_interrupt(dc, FRAME_END_INT);
+	}
 
 	tegra_dc_release_dc_out(dc);
 	mutex_unlock(&dc->lock);
