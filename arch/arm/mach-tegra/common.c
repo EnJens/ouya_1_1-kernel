@@ -85,8 +85,6 @@
 
 unsigned long tegra_bootloader_fb_start;
 unsigned long tegra_bootloader_fb_size;
-unsigned long tegra_bootloader_fb2_start;
-unsigned long tegra_bootloader_fb2_size;
 unsigned long tegra_fb_start;
 unsigned long tegra_fb_size;
 unsigned long tegra_fb2_start;
@@ -481,21 +479,6 @@ static int __init tegra_bootloader_fb_arg(char *options)
 }
 early_param("tegra_fbmem", tegra_bootloader_fb_arg);
 
-static int __init tegra_bootloader_fb2_arg(char *options)
-{
-	char *p = options;
-
-	tegra_bootloader_fb2_size = memparse(p, &p);
-	if (*p == '@')
-		tegra_bootloader_fb2_start = memparse(p+1, &p);
-
-	pr_info("Found tegra_fbmem2: %08lx@%08lx\n",
-		tegra_bootloader_fb2_size, tegra_bootloader_fb2_start);
-
-	return 0;
-}
-early_param("tegra_fbmem2", tegra_bootloader_fb2_arg);
-
 static int __init tegra_sku_override(char *id)
 {
 	char *p = id;
@@ -855,30 +838,6 @@ out:
 	iounmap(to_io);
 }
 
-void tegra_clear_framebuffer(unsigned long to, unsigned long size)
-{
-	void __iomem *to_io;
-	unsigned long i;
-
-	BUG_ON(PAGE_ALIGN((unsigned long)to) != (unsigned long)to);
-	BUG_ON(PAGE_ALIGN(size) != size);
-
-	to_io = ioremap(to, size);
-	if (!to_io) {
-		pr_err("%s: Failed to map target framebuffer\n", __func__);
-		return;
-	}
-
-	if (pfn_valid(page_to_pfn(phys_to_page(to)))) {
-		for (i = 0 ; i < size; i += PAGE_SIZE)
-			memset(to_io + i, 0, PAGE_SIZE);
-	} else {
-		for (i = 0; i < size; i += 4)
-			writel(0, to_io + i);
-	}
-	iounmap(to_io);
-}
-
 void __init tegra_reserve(unsigned long carveout_size, unsigned long fb_size,
 	unsigned long fb2_size)
 {
@@ -955,36 +914,19 @@ void __init tegra_reserve(unsigned long carveout_size, unsigned long fb_size,
 		}
 	}
 
-	if (tegra_bootloader_fb2_size) {
-		tegra_bootloader_fb2_size =
-				PAGE_ALIGN(tegra_bootloader_fb2_size);
-		if (memblock_reserve(tegra_bootloader_fb2_start,
-				tegra_bootloader_fb2_size)) {
-			pr_err("Failed to reserve bootloader frame buffer2 "
-				"%08lx@%08lx\n", tegra_bootloader_fb2_size,
-				tegra_bootloader_fb2_start);
-			tegra_bootloader_fb2_start = 0;
-			tegra_bootloader_fb2_size = 0;
-		}
-	}
-
 	pr_info("Tegra reserved memory:\n"
-		"LP0:                     %08lx - %08lx\n"
-		"Bootloader framebuffer:  %08lx - %08lx\n"
-		"Bootloader framebuffer2: %08lx - %08lx\n"
-		"Framebuffer:             %08lx - %08lx\n"
-		"2nd Framebuffer:         %08lx - %08lx\n"
-		"Carveout:                %08lx - %08lx\n"
-		"Vpr:                     %08lx - %08lx\n",
+		"LP0:                    %08lx - %08lx\n"
+		"Bootloader framebuffer: %08lx - %08lx\n"
+		"Framebuffer:            %08lx - %08lx\n"
+		"2nd Framebuffer:        %08lx - %08lx\n"
+		"Carveout:               %08lx - %08lx\n"
+		"Vpr:                    %08lx - %08lx\n",
 		tegra_lp0_vec_start,
 		tegra_lp0_vec_size ?
 			tegra_lp0_vec_start + tegra_lp0_vec_size - 1 : 0,
 		tegra_bootloader_fb_start,
 		tegra_bootloader_fb_size ?
-		 tegra_bootloader_fb_start + tegra_bootloader_fb_size - 1 : 0,
-		tegra_bootloader_fb2_start,
-		tegra_bootloader_fb2_size ?
-		 tegra_bootloader_fb2_start + tegra_bootloader_fb2_size - 1 : 0,
+			tegra_bootloader_fb_start + tegra_bootloader_fb_size - 1 : 0,
 		tegra_fb_start,
 		tegra_fb_size ?
 			tegra_fb_start + tegra_fb_size - 1 : 0,
@@ -1051,10 +993,6 @@ void __init tegra_release_bootloader_fb(void)
 		if (memblock_free(tegra_bootloader_fb_start,
 						tegra_bootloader_fb_size))
 			pr_err("Failed to free bootloader fb.\n");
-	if (tegra_bootloader_fb2_size)
-		if (memblock_free(tegra_bootloader_fb2_start,
-						tegra_bootloader_fb2_size))
-			pr_err("Failed to free bootloader fb2.\n");
 }
 
 #ifdef CONFIG_TEGRA_CONVSERVATIVE_GOV_ON_EARLYSUPSEND
@@ -1064,26 +1002,14 @@ char *cpufreq_conservative_gov = "conservative";
 void cpufreq_store_default_gov(void)
 {
 	unsigned int cpu = 0;
-	struct cpufreq_policy *policy;
 
 #ifndef CONFIG_TEGRA_AUTO_HOTPLUG
 	for_each_online_cpu(cpu)
 #endif
 	{
-		policy = cpufreq_cpu_get(cpu);
-		if (policy && policy->governor) {
-			sprintf(cpufreq_default_gov[cpu], "%s",
-					policy->governor->name);
-			cpufreq_cpu_put(policy);
-		} else {
-			/* No policy or no gov set for this
-			 * online cpu. If we are here, require
-			 * serious debugging hence setting
-			 * as pr_error.
-			 */
-			pr_err("No gov or No policy for online cpu:%d,"
-					, cpu);
-		}
+		if (cpufreq_current_gov(cpufreq_default_gov[cpu], cpu) < 0)
+			pr_info("Unable to fetch gov:%s for online cpu:%d\n"
+				, cpufreq_default_gov[cpu], cpu);
 	}
 }
 
@@ -1101,7 +1027,7 @@ void cpufreq_change_gov(char *target_gov)
 			/* Unable to set gov for the online cpu.
 			 * If it happens, needs to debug.
 			 */
-			pr_info("Unable to set gov:%s for online cpu:%d,"
+			pr_info("Unable to set gov:%s for online cpu:%d"
 				, cpufreq_default_gov[cpu]
 					, cpu);
 	}
@@ -1124,7 +1050,7 @@ void cpufreq_restore_default_gov(void)
 				 * It was online on suspend and becomes
 				 * offline on resume.
 				 */
-				pr_info("Unable to restore gov:%s for cpu:%d,"
+				pr_info("Unable to restore gov:%s for cpu:%d"
 						, cpufreq_default_gov[cpu]
 							, cpu);
 		}

@@ -29,6 +29,8 @@
 #include <mach/edp.h>
 #include <linux/slab.h>
 #include <linux/suspend.h>
+#include <linux/gpio.h>
+#include "gpio-names.h"
 
 #include "clock.h"
 #include "cpu-tegra.h"
@@ -129,14 +131,50 @@ static int tegra_thermal_zone_unbind(struct thermal_zone_device *thz,
 	return 0;
 }
 
+
+static int fan_gpio=0;
+#define FAN_GPIO TEGRA_GPIO_PJ2
+static void	OUYA_fan_control(long temp_tj)
+{
+#ifdef TEGRA_THERMAL_CREATE_LEDS
+	int ret=0;
+	if ( fan_gpio == 0 ) {
+		ret = gpio_request(FAN_GPIO, "fan");
+		if (ret < 0)
+			gpio_free(FAN_GPIO);
+		ret = gpio_direction_output(FAN_GPIO, 1);
+		if (ret < 0)
+			gpio_free(FAN_GPIO);
+		fan_gpio=FAN_GPIO;
+	}
+#else
+	fan_gpio=FAN_GPIO;
+#endif		
+	pr_debug("OUYA: Fan[%lu]:",(unsigned long)temp_tj);	
+	if ( temp_tj > 60000) {
+		gpio_set_value(FAN_GPIO, 1);
+		pr_debug(" <Turn on>\n");	
+	}
+	if ( temp_tj < 45000) {
+		gpio_set_value(FAN_GPIO, 0);
+		pr_debug(" <Turn off>\n");			
+	}
+	
+}
+
 static int tegra_thermal_zone_get_temp(struct thermal_zone_device *thz,
 					unsigned long *temp)
 {
 	struct tegra_thermal_device *device = thz->devdata;
 
 	if (!tegra_thermal_suspend)
+	{
 		device->get_temp(device->data, temp);
-
+		
+		/* BARREL: Add Here to check the tj for fan control */	
+		OUYA_fan_control(*temp);
+		
+	}
 	return 0;
 }
 
@@ -384,9 +422,9 @@ int tegra_thermal_device_register(struct tegra_thermal_device *device)
 #endif
 #ifdef CONFIG_TEGRA_SKIN_THROTTLE
 	if (device->id == therm->skin_device_id) {
-		t1 = 0;
-		t2 = 1;
-		pdelay = 5000;
+		t1 = therm->tc1_skin;
+		t2 = therm->tc2_skin;
+		pdelay = therm->passive_delay_skin;
 		create_thz = true;
 	}
 #endif

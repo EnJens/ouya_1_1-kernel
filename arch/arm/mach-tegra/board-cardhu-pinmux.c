@@ -394,7 +394,7 @@ static __initdata struct tegra_pingroup_config cardhu_pinmux_common[] = {
 	DEFAULT_PINMUX(PEX_L0_CLKREQ_N, PCIE,            NORMAL,    NORMAL,     INPUT),
 	DEFAULT_PINMUX(PEX_WAKE_N,      PCIE,            NORMAL,    NORMAL,     INPUT),
 	DEFAULT_PINMUX(PEX_L1_PRSNT_N,  PCIE,            NORMAL,    NORMAL,     INPUT),
-	DEFAULT_PINMUX(PEX_L1_RST_N,    PCIE,            NORMAL,    NORMAL,     OUTPUT),
+	DEFAULT_PINMUX(PEX_L1_RST_N,    PCIE,            PULL_UP,   NORMAL,     OUTPUT),
 	DEFAULT_PINMUX(PEX_L1_CLKREQ_N, PCIE,            NORMAL,    NORMAL,     INPUT),
 	DEFAULT_PINMUX(PEX_L2_PRSNT_N,  PCIE,            NORMAL,    NORMAL,     INPUT),
 	DEFAULT_PINMUX(PEX_L2_RST_N,    PCIE,            NORMAL,    NORMAL,     OUTPUT),
@@ -473,6 +473,7 @@ static __initdata struct tegra_pingroup_config cardhu_pinmux_cardhu_a03[] = {
 	DEFAULT_PINMUX(LCD_CS1_N,       DISPLAYA,        NORMAL,    NORMAL,     INPUT),
 	DEFAULT_PINMUX(LCD_M1,          DISPLAYA,        NORMAL,    NORMAL,     INPUT),
 
+	DEFAULT_PINMUX(GMI_CS1_N,       RSVD1,           NORMAL,    NORMAL,     OUTPUT),
 	DEFAULT_PINMUX(GMI_CS2_N,       RSVD1,           PULL_UP,   NORMAL,     INPUT),
 	DEFAULT_PINMUX(GMI_AD8,         PWM0,            NORMAL,    NORMAL,     OUTPUT),
 	DEFAULT_PINMUX(GMI_AD10,        NAND,            NORMAL,    NORMAL,     OUTPUT),
@@ -495,20 +496,9 @@ static __initdata struct tegra_pingroup_config cardhu_pinmux_e1291_a04[] = {
 
 	/*PCIE dock detect*/
 	DEFAULT_PINMUX(GPIO_PU4,        RSVD1,           PULL_UP,   NORMAL,     INPUT),
-};
 
-static __initdata struct tegra_pingroup_config cardhu_pinmux_pm315[] = {
-	DEFAULT_PINMUX(GMI_AD15,        NAND,            PULL_DOWN,   NORMAL,   OUTPUT),
-	DEFAULT_PINMUX(ULPI_DATA6,      UARTA,           NORMAL,    NORMAL,     OUTPUT),
-	DEFAULT_PINMUX(SPI2_MOSI,       SPI6,            NORMAL,    NORMAL,     INPUT),
-	DEFAULT_PINMUX(DAP3_SCLK,       RSVD1,           NORMAL,    NORMAL,     OUTPUT),
-	/* PCIE dock detect */
-	DEFAULT_PINMUX(GPIO_PU4,        RSVD1,           PULL_UP,   NORMAL,     INPUT),
-	/* CDC enable for realtek RTL5640 */
-	DEFAULT_PINMUX(SPI2_SCK,        SPI2,            NORMAL,    NORMAL,     OUTPUT),
-	DEFAULT_PINMUX(SPI2_CS1_N,      SPI2,            NORMAL,    NORMAL,     INPUT),
-	/* Power up for USB1, USB3 */
-	DEFAULT_PINMUX(GMI_AD13,    	NAND,            PULL_UP,    NORMAL,    INPUT),
+	/* For DDR strappin reading */
+	DEFAULT_PINMUX(GMI_AD4,         RSVD1,           NORMAL,     TRISTATE,   INPUT),
 };
 
 static __initdata struct tegra_pingroup_config cardhu_pinmux_e1198[] = {
@@ -620,33 +610,10 @@ static __initdata struct tegra_pingroup_config gmi_pins_269[] = {
 	DEFAULT_PINMUX(GMI_WP_N,        NAND,           NORMAL,     NORMAL,       INPUT),
 };
 
-static void __init cardhu_wm8903_audio_init(void)
+static void __init cardhu_pinmux_audio_init(void)
 {
-	int ret = gpio_request(TEGRA_GPIO_CDC_IRQ, "wm8903");
-	if (ret < 0)
-		pr_err("%s() Error in gpio_request() for gpio %d\n",
-					__func__, ret);
-	ret = gpio_direction_input(TEGRA_GPIO_CDC_IRQ);
-	if (ret < 0) {
-		pr_err("%s() Error in setting gpio %d to in/out\n",
-					__func__, ret);
-		gpio_free(TEGRA_GPIO_CDC_IRQ);
-	}
-}
-
-static void __init beaver_rt5640_audio_init(void)
-{
-	int ret = gpio_request(TEGRA_GPIO_RTL_CDC_IRQ, "rt5640");
-	if (ret < 0)
-		pr_err("%s() Error in gpio_request() for gpio %d\n",
-					__func__, ret);
-	ret = gpio_direction_input(TEGRA_GPIO_RTL_CDC_IRQ);
-	if (ret < 0) {
-		pr_err("%s() Error in setting gpio %d to in/out\n",
-					__func__, ret);
-		gpio_free(TEGRA_GPIO_RTL_CDC_IRQ);
-	}
-
+	gpio_request(TEGRA_GPIO_CDC_IRQ, "wm8903");
+	gpio_direction_input(TEGRA_GPIO_CDC_IRQ);
 }
 
 #define GPIO_INIT_PIN_MODE(_gpio, _is_input, _value)	\
@@ -673,13 +640,6 @@ static struct gpio_init_pin_info init_gpio_mode_e1291_a03[] = {
 static struct gpio_init_pin_info init_gpio_mode_e1291_a04[] = {
 	GPIO_INIT_PIN_MODE(TEGRA_GPIO_PDD6, false, 0),
 	GPIO_INIT_PIN_MODE(TEGRA_GPIO_PDD4, false, 0),
-	GPIO_INIT_PIN_MODE(TEGRA_GPIO_PR2, false, 0),
-};
-
-static struct gpio_init_pin_info init_gpio_mode_pm315[] = {
-	GPIO_INIT_PIN_MODE(TEGRA_GPIO_PDD6, false, 0),
-	GPIO_INIT_PIN_MODE(TEGRA_GPIO_PDD4, false, 0),
-	GPIO_INIT_PIN_MODE(TEGRA_GPIO_PH5, false, 1),
 	GPIO_INIT_PIN_MODE(TEGRA_GPIO_PR2, false, 0),
 };
 
@@ -713,10 +673,6 @@ static void __init cardhu_gpio_init_configure(void)
 			len = ARRAY_SIZE(init_gpio_mode_e1291_a04);
 			pins_info = init_gpio_mode_e1291_a04;
 		}
-		break;
-	case BOARD_PM315:
-		len = ARRAY_SIZE(init_gpio_mode_pm315);
-		pins_info = init_gpio_mode_pm315;
 		break;
 	default:
 		return;
@@ -766,12 +722,7 @@ int __init cardhu_pinmux_init(void)
 			tegra_pinmux_config_table(cardhu_pinmux_e1291_a04,
 					ARRAY_SIZE(cardhu_pinmux_e1291_a04));
 		break;
-	case BOARD_PM315:
-		tegra_pinmux_config_table(cardhu_pinmux_cardhu_a03,
-				ARRAY_SIZE(cardhu_pinmux_cardhu_a03));
-		tegra_pinmux_config_table(cardhu_pinmux_pm315,
-				ARRAY_SIZE(cardhu_pinmux_pm315));
-		break;
+
 	case BOARD_PM269:
 	case BOARD_PM305:
 	case BOARD_PM311:
@@ -802,11 +753,7 @@ int __init cardhu_pinmux_init(void)
 		break;
 	}
 
-	if (board_info.board_id == BOARD_PM315)
-		beaver_rt5640_audio_init();
-	else
-		cardhu_wm8903_audio_init();
-
+	cardhu_pinmux_audio_init();
 
 	return 0;
 }
@@ -819,7 +766,10 @@ int __init cardhu_pinmux_init(void)
 		.is_input	= _is_input,	\
 		.value		= _value,	\
 	}
-
+/*
+ *  BARREL
+ */	
+#if 0
 struct gpio_init_pin_info pin_lpm_cardhu_common[] = {
 	PIN_GPIO_LPM("GMI_CS3_N", TEGRA_GPIO_PK4, 0, 0),
 	PIN_GPIO_LPM("GMI_CS4_N", TEGRA_GPIO_PK2, 1, 0),
@@ -828,6 +778,17 @@ struct gpio_init_pin_info pin_lpm_cardhu_common[] = {
 	PIN_GPIO_LPM("GMI_CS1",   TEGRA_GPIO_PJ2, 1, 0),
 	PIN_GPIO_LPM("GMI_WP_N",  TEGRA_GPIO_PC7, 1, 0),
 };
+#else
+struct gpio_init_pin_info pin_lpm_cardhu_common[] = {
+	PIN_GPIO_LPM("GMI_CS3_N", TEGRA_GPIO_PK4, 0, 0),
+	PIN_GPIO_LPM("GMI_CS4_N", TEGRA_GPIO_PK2, 1, 0),
+	PIN_GPIO_LPM("GMI_CS7",   TEGRA_GPIO_PI6, 1, 0),
+	PIN_GPIO_LPM("GMI_CS0",   TEGRA_GPIO_PJ0, 1, 0),
+	PIN_GPIO_LPM("GMI_WP_N",  TEGRA_GPIO_PC7, 1, 0),
+	/* BARREL: Let SIP module keep awake */
+	PIN_GPIO_LPM("LCD_PWR0", TEGRA_GPIO_PB2, 0, 1),
+};
+#endif
 
 /* E1198 without PM313 display board */
 struct gpio_init_pin_info pin_lpm_cardhu_common_wo_pm313[] = {

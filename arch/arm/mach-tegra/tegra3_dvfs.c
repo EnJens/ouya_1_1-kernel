@@ -357,10 +357,12 @@ static struct dvfs core_dvfs_table[] = {
 	CORE_DVFS("disp1",  2, 0, KHZ,   155000, 155000, 268000, 268000, 268000, 268000,  268000,   268000,  268000),
 	CORE_DVFS("disp1",  3, 0, KHZ,        1, 120000, 120000, 120000, 120000, 190000,  190000,   190000,  190000),
 
+#ifndef PRIMARY_DISP_HDMI
 	CORE_DVFS("disp2",  0, 0, KHZ,        1, 120000, 120000, 120000, 120000, 190000,  190000,   190000,  190000),
 	CORE_DVFS("disp2",  1, 0, KHZ,   155000, 155000, 268000, 268000, 268000, 268000,  268000,   268000,  268000),
 	CORE_DVFS("disp2",  2, 0, KHZ,   155000, 155000, 268000, 268000, 268000, 268000,  268000,   268000,  268000),
 	CORE_DVFS("disp2",  3, 0, KHZ,        1, 120000, 120000, 120000, 120000, 190000,  190000,   190000,  190000),
+#endif
 
 	CORE_DVFS("pwm",   -1, 1, KHZ,   204000, 408000, 408000, 408000, 408000, 408000,  408000,   408000,  408000),
 };
@@ -817,7 +819,6 @@ struct core_cap {
 	int level;
 };
 static struct core_cap tegra3_core_cap;
-static struct core_cap kdvfs_core_cap;
 static struct core_cap user_core_cap;
 
 static struct core_cap user_cbus_cap;
@@ -866,8 +867,6 @@ static void core_cap_update(void)
 {
 	int new_level = tegra3_dvfs_rail_vdd_core.max_millivolts;
 
-	if (kdvfs_core_cap.refcnt)
-		new_level = min(new_level, kdvfs_core_cap.level);
 	if (user_core_cap.refcnt)
 		new_level = min(new_level, user_core_cap.level);
 
@@ -1028,30 +1027,6 @@ const struct attribute *cap_attributes[] = {
 	NULL,
 };
 
-void tegra_dvfs_core_cap_enable(bool enable)
-{
-	mutex_lock(&core_cap_lock);
-
-	if (enable) {
-		kdvfs_core_cap.refcnt++;
-		if (kdvfs_core_cap.refcnt == 1)
-			core_cap_enable(true);
-	} else if (kdvfs_core_cap.refcnt) {
-		kdvfs_core_cap.refcnt--;
-		if (kdvfs_core_cap.refcnt == 0)
-			core_cap_enable(false);
-	}
-	mutex_unlock(&core_cap_lock);
-}
-
-void tegra_dvfs_core_cap_level_set(int level)
-{
-	mutex_lock(&core_cap_lock);
-	kdvfs_core_cap.level = level;
-	core_cap_update();
-	mutex_unlock(&core_cap_lock);
-}
-
 static int __init init_core_cap_one(struct clk *c, unsigned long *freqs)
 {
 	int i, v, next_v = 0;
@@ -1100,7 +1075,7 @@ static int __init tegra_dvfs_init_core_cap(void)
 	int i;
 	struct clk *c = NULL;
 
-	tegra3_core_cap.level = kdvfs_core_cap.level = user_core_cap.level =
+	tegra3_core_cap.level = user_core_cap.level =
 		tegra3_dvfs_rail_vdd_core.max_millivolts;
 
 	for (i = 0; i < ARRAY_SIZE(core_cap_table); i++) {
